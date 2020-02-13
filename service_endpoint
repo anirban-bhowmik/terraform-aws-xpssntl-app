@@ -1,0 +1,99 @@
+module "endpoint" {
+  source = "git@github.com:traveloka/terraform-aws-nlb-single-listener?ref=v0.1.2"
+  lb_subnet_ids   = "${var.lb_subnet_ids}"
+  vpc_id          = "${var.vpc_id}"
+  tg_port         = "${local.service_port}"
+  tg_protocol     = "TCP"
+  service_name    = "${local.service_name}"
+  description     = "Internal Network Load Balancer for ${local.service_name}"
+  environment     = "${var.environment}"
+  product_domain  = "${local.product_domain}"
+  cluster_role    = "${var.cluster_role}"
+  tg_target_type  = "ip"
+  tg_health_check = "${local.lb_tg_health_check}"
+}
+
+module "service-provider" {
+  source = "git@github.com:traveloka/terraform-aws-privatelink-provider?ref=v0.1.0"
+  nlb_arns = "${module.endpoint.lb_arn}"
+
+  # Optional
+  allowed_principals  = ["${var.endpoint_service_allowed_principals}"]
+}
+
+data "aws_network_interface" "nlb_ip_ap_southeast_1a" {
+  filter = [
+    {
+      name   = "description"
+      values = ["${format("ELB %s", join("/", slice(split("/", module.endpoint.lb_arn), 1, length(split("/", module.endpoint.lb_arn)))))}"]
+    },
+    {
+      name   = "availability-zone"
+      values = ["ap-southeast-1a"]
+    },
+  ]
+}
+
+data "aws_network_interface" "nlb_ip_ap_southeast_1b" {
+  filter = [
+    {
+      name   = "description"
+      values = ["${format("ELB %s", join("/", slice(split("/", module.endpoint.lb_arn), 1, length(split("/", module.endpoint.lb_arn)))))}"]
+    },
+    {
+      name   = "availability-zone"
+      values = ["ap-southeast-1b"]
+    },
+  ]
+}
+
+data "aws_network_interface" "nlb_ip_ap_southeast_1c" {
+  filter = [
+    {
+      name   = "description"
+      values = ["${format("ELB %s", join("/", slice(split("/", module.endpoint.lb_arn), 1, length(split("/", module.endpoint.lb_arn)))))}"]
+    },
+    {
+      name   = "availability-zone"
+      values = ["ap-southeast-1c"]
+    },
+  ]
+}
+
+resource "aws_security_group_rule" "ingress_app_from_nlb_ap_southeast_1a" {
+  type        = "ingress"
+  from_port   = "${local.service_port}"
+  to_port     = "${local.service_port}"
+  protocol    = "TCP"
+  cidr_blocks = ["${data.aws_network_interface.nlb_ip_ap_southeast_1a.private_ips.0}/32"]
+  security_group_id = "${aws_security_group.app.id}"
+}
+
+resource "aws_security_group_rule" "ingress_app_from_nlb_ap_southeast_1b" {
+  type        = "ingress"
+  from_port   = "${local.service_port}"
+  to_port     = "${local.service_port}"
+  protocol    = "TCP"
+  cidr_blocks = ["${data.aws_network_interface.nlb_ip_ap_southeast_1b.private_ips.0}/32"]
+  security_group_id = "${aws_security_group.app.id}"
+}
+
+resource "aws_security_group_rule" "ingress_app_from_nlb_ap_southeast_1c" {
+  type        = "ingress"
+  from_port   = "${local.service_port}"
+  to_port     = "${local.service_port}"
+  protocol    = "TCP"
+  cidr_blocks = ["${data.aws_network_interface.nlb_ip_ap_southeast_1c.private_ips.0}/32"]
+  security_group_id = "${aws_security_group.app.id}"
+}
+
+output "service_provider_name" {
+  description = "The name of VPC Endpoint Service"
+  value       = "${module.service-provider.service_provider_name}"
+}
+
+variable "endpoint_service_allowed_principals" {
+  default     = []
+  type        = "list"
+  description = "List of all whitelist AWS principals to connect to this endpoint"
+}
